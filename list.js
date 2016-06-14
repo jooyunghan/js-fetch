@@ -29,8 +29,18 @@ var PROTO = {
 
   map2(b, f) {
     return this.flatMap(n => b.map(m => f(n, m)));
-  }
+  },
 
+  sequence(M) {
+    if (this.head) {
+      return this.head.flatMap(h => {
+        const se = this.tail.sequence(M);
+        return se.map(t => cons(h, t))
+      });
+    } else {
+      return M.of(nil());
+    }
+  }
 }
 
 const NIL = Object.create(PROTO);
@@ -49,6 +59,10 @@ function list(...values) {
   return cons(head, list(...tail)) 
 }
 
+function of(value) {
+  return list(value)
+}
+
 module.exports = {
-  cons, nil, list
+  cons, nil, list, of
 }

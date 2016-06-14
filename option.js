@@ -34,6 +34,10 @@ function none() {
   return NONE;
 }
 
+function of(value) {
+  return some(value);
+}
+
 module.exports = {
-  some, none
+  some, none, of
 }

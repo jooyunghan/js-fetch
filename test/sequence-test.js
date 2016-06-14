@@ -1,4 +1,4 @@
-var assert = require('chai').assert;
+var expect = require('chai').expect;
 
 var M = require('../monad');
 var L = require('../list');
@@ -6,7 +6,11 @@ var O = require('../option');
 
 describe('sequence', function () {
   it('should run on list of maybe', function () {
-    assert.deepEqual(M.sequence(L.list(O.some(1), O.some(2)))
-      , O.some(L.list(1,2)));
+    expect(L.list(O.some(1), O.some(2)).sequence(O)).to.eql(O.some(L.list(1,2)))
+  })
+
+  it('should run on list of list', function () {
+    expect(L.list(L.list(1,2), L.list(3,4)).sequence(L))
+      .to.eql(L.list(L.list(1,3), L.list(1,4), L.list(2,3), L.list(2,4)))
   })
 })
