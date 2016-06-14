@@ -40,6 +40,16 @@ var PROTO = {
     } else {
       return M.of(nil());
     }
+  },
+
+  length() {
+    var c = this;
+    var count = 0;
+    while (c.head) {
+      count ++;
+      c = c.tail;
+    }
+    return count
   }
 }
 
