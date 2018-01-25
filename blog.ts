@@ -35,8 +35,8 @@ class Ref<A> {
 class Fetch<A> {
   constructor(public run: () => Result<A>) {}
 
-  ap<B, C>(b: Fetch<B>): Fetch<C> {
-    return Fetch.ap(this as any, b);
+  ap<B, C>(this: Fetch<(b: B) => C>, b: Fetch<B>): Fetch<C> {
+    return Fetch.ap(this, b);
   }
 
   map<B>(f: (a: A) => B): Fetch<B> {
