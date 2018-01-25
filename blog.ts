@@ -10,7 +10,7 @@ class Done<A> {
 }
 
 class Blocked<A> {
-  constructor(public brs: Array<BlockedRequest>, public cont: Fetch<A>) {}
+  constructor(public brs: BlockedRequest[], public cont: Fetch<A>) {}
 }
 
 class BlockedRequest {
@@ -35,10 +35,6 @@ class Ref<A> {
 class Fetch<A> {
   constructor(public run: () => Result<A>) {}
 
-  ap<B, C>(this: Fetch<(b: B) => C>, b: Fetch<B>): Fetch<C> {
-    return Fetch.ap(this, b);
-  }
-
   map<B>(f: (a: A) => B): Fetch<B> {
     return this.flatMap(a => Fetch.pure(f(a)));
   }
@@ -54,10 +50,14 @@ class Fetch<A> {
     });
   }
 
-  static ap<A, B>(f: Fetch<(a: A) => B>, a: Fetch<A>): Fetch<B> {
+  static pure<A>(a: A): Fetch<A> {
+    return new Fetch(() => new Done(a));
+  }
+
+  ap<B, C>(this: Fetch<(b: B) => C>, b: Fetch<B>): Fetch<C> {
     return new Fetch(() => {
-      let ff = f.run();
-      let aa = a.run();
+      let ff = this.run();
+      let aa = b.run();
       if (ff instanceof Done) {
         if (aa instanceof Done) {
           return new Done(ff.a(aa.a));
@@ -72,10 +72,6 @@ class Fetch<A> {
         }
       }
     });
-  }
-
-  static pure<A>(a: A): Fetch<A> {
-    return new Fetch(() => new Done(a));
   }
 
   static liftA2<A, B, C>(
@@ -120,7 +116,6 @@ function dataFetch<A>(request: Request<A>): Fetch<A> {
     let br = new BlockedRequest(request, box);
     let cont = new Fetch(() => {
       let result = (box.value as FetchSuccess<A>).a;
-      //console.log(request, "=>", result)
       return new Done(result);
     });
     return new Blocked([br], cont);
@@ -131,7 +126,7 @@ function dataFetch<A>(request: Request<A>): Fetch<A> {
 
 type PostId = number;
 
-type PostInfo = { id: PostId; postDate: Date; postTopic: String };
+type PostInfo = { id: PostId; date: Date; topic: string };
 
 type PostContent = string;
 
@@ -139,7 +134,7 @@ type PostContent = string;
 // Requests are parameterised by their result type
 class Request<A> {}
 
-class FetchPosts extends Request<Array<PostId>> {}
+class FetchPosts extends Request<PostId[]> {}
 
 class FetchPostInfo extends Request<PostInfo> {
   constructor(public id: PostId) {
@@ -161,7 +156,7 @@ class FetchPostViews extends Request<number> {
 
 // implementations for the data-fetching operations
 
-function getPostIds(): Fetch<Array<PostId>> {
+function getPostIds(): Fetch<PostId[]> {
   return dataFetch(new FetchPosts());
 }
 
@@ -187,45 +182,45 @@ function fetch(brs: BlockedRequest[]) {
   const posts = [
     {
       info: {
-        postDate: new Date("2016-06-25"),
+        date: new Date("2016-06-25"),
         id: 1,
-        postTopic: "haskell",
+        topic: "haskell",
       },
       content: "haskell content",
       views: 2,
     },
     {
       info: {
-        postDate: new Date("2016-06-26"),
+        date: new Date("2016-06-26"),
         id: 3,
-        postTopic: "applicative",
+        topic: "applicative",
       },
       content: "applicative content",
       views: 9,
     },
     {
       info: {
-        postDate: new Date("2016-06-27"),
+        date: new Date("2016-06-27"),
         id: 6,
-        postTopic: "haxl",
+        topic: "haxl",
       },
       content: "haxl content",
       views: 7,
     },
     {
       info: {
-        postDate: new Date("2016-06-23"),
+        date: new Date("2016-06-23"),
         id: 4,
-        postTopic: "haskell",
+        topic: "haskell",
       },
       content: "another haskell content",
       views: 8,
     },
     {
       info: {
-        postDate: new Date("2016-06-21"),
+        date: new Date("2016-06-21"),
         id: 5,
-        postTopic: "functional",
+        topic: "functional",
       },
       content: "functional content",
       views: 10,
@@ -255,13 +250,15 @@ function blog(): Fetch<Html> {
 }
 
 function mainPane(): Fetch<Html> {
-  return getAllPostsInfo().flatMap(posts => {
-    posts.sort((a, b) => b.postDate.getTime() - a.postDate.getTime());
-    const ordered = posts.slice(0, 5);
-    return Fetch.traverse(p => getPostContent(p.id), ordered).map(content =>
-      renderPosts(zip(ordered, content))
-    );
-  });
+  return getAllPostsInfo()
+    .flatMap(posts => {
+      posts.sort((a, b) => +b.date - +a.date);
+      const ordered = posts.slice(0, 5);
+      return Fetch.traverse(p => getPostContent(p.id), ordered).map(content =>
+        zip(ordered, content)
+      );
+    })
+    .map(renderPosts);
 }
 
 function getAllPostsInfo(): Fetch<PostInfo[]> {
@@ -274,7 +271,7 @@ function leftPane(): Fetch<Html> {
 
 function getPostDetails(id: PostId): Fetch<Pair<PostInfo, PostContent>> {
   return Fetch.liftA2<PostInfo, PostContent, Pair<PostInfo, PostContent>>(
-    makeTuple,
+    makePair,
     getPostInfo(id),
     getPostContent(id)
   );
@@ -283,26 +280,19 @@ function getPostDetails(id: PostId): Fetch<Pair<PostInfo, PostContent>> {
 function popularPosts(): Fetch<Html> {
   return getPostIds()
     .flatMap(pids => {
-      return Fetch.traverse(getPostViews, pids).map(views => {
+      return Fetch.traverse(getPostViews, pids).flatMap(views => {
         let paired = zip(pids, views);
         paired.sort((a, b) => b[1] - a[1]);
-        return paired.slice(0, 5).map(pair => pair[0]);
+        let ordered = paired.slice(0, 5).map(pair => pair[0]);
+        return Fetch.traverse(getPostDetails, ordered);
       });
     })
-    .flatMap(ordered => Fetch.traverse(getPostDetails, ordered))
-    .map(content => renderPostList(content));
+    .map(renderPostList);
 }
 
 function topics(): Fetch<Html> {
   return getAllPostsInfo()
-    .map(posts => {
-      let topics = posts.map(p => p.postTopic);
-      let map: { [s: string]: number } = {};
-      topics.forEach((topic: string) => {
-        map[topic] = 1 + ((map[topic] as number) || 0);
-      });
-      return map;
-    })
+    .map(posts => count(posts, p => p.topic))
     .map(renderTopics);
 }
 
@@ -334,7 +324,7 @@ function renderPosts(posts: Pair<PostInfo, PostContent>[]): Html {
     "div",
     {},
     posts.map(p =>
-      h("div", {}, [h("h2", {}, String(p[0].postDate)), h("div", {}, p[1])])
+      h("div", {}, [h("h2", {}, String(p[0].date)), h("div", {}, p[1])])
     )
   );
 }
@@ -359,12 +349,20 @@ function curry<A, B, C>(f: (a: A, b: B) => C): (a: A) => ((b: B) => C) {
   return a => b => f(a, b);
 }
 
-function makeTuple<A, B>(a: A, b: B): Pair<A, B> {
+function makePair<A, B>(a: A, b: B): Pair<A, B> {
   return [a, b];
 }
 
 function cons<A>(a: A, as: A[]): A[] {
   return [a, ...as];
+}
+
+function count<A>(as: A[], f: (a: A) => string): { [s: string]: number } {
+  let counts: { [s: string]: number } = {};
+  as.map(f).forEach(key => {
+    counts[key] = 1 + (counts[key] || 0);
+  });
+  return counts;
 }
 
 function main() {
